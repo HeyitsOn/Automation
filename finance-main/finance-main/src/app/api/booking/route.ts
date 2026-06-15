@@ -32,17 +32,25 @@ export async function POST(req: NextRequest) {
     // ── Emails ────────────────────────────────────────────────────────────
     const resend = new Resend(process.env.RESEND_API_KEY);
 
+    const bookingHtml = `
+      <h2>New Consultation Booking</h2>
+      <p><strong>Client Email:</strong> ${email}</p>
+      <p><strong>Date:</strong> ${date}</p>
+      <p><strong>Time:</strong> ${time}</p>
+    `;
+
     await Promise.all([
       resend.emails.send({
         from: "The Accounting Room <onboarding@resend.dev>",
-        to: ["snethembasibiya@icloud.com", "silekuonika02@gmail.com"],
+        to: "snethembasibiya@icloud.com",
         subject: `New consultation booking from ${email}`,
-        html: `
-          <h2>New Consultation Booking</h2>
-          <p><strong>Client Email:</strong> ${email}</p>
-          <p><strong>Date:</strong> ${date}</p>
-          <p><strong>Time:</strong> ${time}</p>
-        `,
+        html: bookingHtml,
+      }),
+      resend.emails.send({
+        from: "The Accounting Room <onboarding@resend.dev>",
+        to: "silekuonika02@gmail.com",
+        subject: `New consultation booking from ${email}`,
+        html: bookingHtml,
       }),
       resend.emails.send({
         from: "The Accounting Room <onboarding@resend.dev>",

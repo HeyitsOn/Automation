@@ -23,18 +23,28 @@ export async function POST(req: NextRequest) {
     // ── Email ─────────────────────────────────────────────────────────────
     const resend = new Resend(process.env.RESEND_API_KEY);
 
-    await resend.emails.send({
-      from: "The Accounting Room <onboarding@resend.dev>",
-      to: ["snethembasibiya@icloud.com", "silekuonika02@gmail.com"],
-      subject: `New contact message from ${name}`,
-      html: `
-        <h2>New Contact Form Submission</h2>
-        <p><strong>Name:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Message:</strong></p>
-        <p>${message}</p>
-      `,
-    });
+    const contactHtml = `
+      <h2>New Contact Form Submission</h2>
+      <p><strong>Name:</strong> ${name}</p>
+      <p><strong>Email:</strong> ${email}</p>
+      <p><strong>Message:</strong></p>
+      <p>${message}</p>
+    `;
+
+    await Promise.all([
+      resend.emails.send({
+        from: "The Accounting Room <onboarding@resend.dev>",
+        to: "snethembasibiya@icloud.com",
+        subject: `New contact message from ${name}`,
+        html: contactHtml,
+      }),
+      resend.emails.send({
+        from: "The Accounting Room <onboarding@resend.dev>",
+        to: "silekuonika02@gmail.com",
+        subject: `New contact message from ${name}`,
+        html: contactHtml,
+      }),
+    ]);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {

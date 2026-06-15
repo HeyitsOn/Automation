@@ -61,15 +61,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No messages provided" }, { status: 400 });
     }
 
-    const { error } = await resend.emails.send({
-      from: "The Accounting Room <onboarding@resend.dev>",
-      to: ["snethembasibiya@icloud.com", "silekuonika02@gmail.com"],
-      subject: "New chat enquiry — The Accounting Room",
-      html: formatMessagesAsHtml(messages),
-    });
+    const chatHtml = formatMessagesAsHtml(messages);
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    const [res1, res2] = await Promise.all([
+      resend.emails.send({
+        from: "The Accounting Room <onboarding@resend.dev>",
+        to: "snethembasibiya@icloud.com",
+        subject: "New chat enquiry — The Accounting Room",
+        html: chatHtml,
+      }),
+      resend.emails.send({
+        from: "The Accounting Room <onboarding@resend.dev>",
+        to: "silekuonika02@gmail.com",
+        subject: "New chat enquiry — The Accounting Room",
+        html: chatHtml,
+      }),
+    ]);
+
+    if (res1.error || res2.error) {
+      return NextResponse.json({ error: "One or more emails failed to send" }, { status: 500 });
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
