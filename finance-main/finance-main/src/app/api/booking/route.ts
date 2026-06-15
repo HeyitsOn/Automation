@@ -10,30 +10,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // ── Conflict check (blocking) ─────────────────────────────────────────
+    // ── Save booking (unique constraint blocks duplicates at DB level) ────
     try {
       const { supabaseAdmin } = await import("@/lib/supabase-admin");
 
-      const { data: existing } = await supabaseAdmin
-        .from("bookings")
-        .select("id")
-        .eq("date", date)
-        .eq("time", time)
-        .maybeSingle();
-
-      if (existing) {
-        return NextResponse.json(
-          { error: "This time slot has just been taken. Please choose a different time." },
-          { status: 409 }
-        );
-      }
-
-      // ── Save booking ────────────────────────────────────────────────────
-      await supabaseAdmin
+      const { error: insertError } = await supabaseAdmin
         .from("bookings")
         .insert([{ email, date, time, created_at: new Date().toISOString() }]);
 
-      if (slotId) {
+      if (insertError) {
+        // Postgres unique violation code = 23505
+        if (insertError.code === "23505") {
+          return NextResponse.json(
+            { error: "This time slot is already booked. Please choose a different time." },
+            { status: 409 }
+          );
+        }
+        console.error("[booking] DB insert error:", insertError.message);
+      } else if (slotId) {
         await supabaseAdmin
           .from("availability")
           .update({ is_booked: true })
