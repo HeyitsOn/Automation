@@ -129,6 +129,17 @@ export default function Home() {
           const data = await res.json();
           if (data?.error) message = data.error;
         } catch { /* empty or non-JSON body */ }
+
+        // If slot was taken, clear selection so client picks again
+        if (res.status === 409) {
+          setSelectedSlot(null);
+          setSelectedDate(null);
+          // Refresh available slots
+          fetch("/api/availability")
+            .then((r) => (r.ok ? r.json() : []))
+            .then((data) => setSlots(Array.isArray(data) ? data : []));
+        }
+
         throw new Error(message);
       }
 

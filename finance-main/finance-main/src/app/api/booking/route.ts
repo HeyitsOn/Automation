@@ -10,11 +10,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // ── Database (non-blocking) ───────────────────────────────────────────
-    // Wrapped separately so a missing/broken Supabase config never blocks email.
+    // ── Conflict check (blocking) ─────────────────────────────────────────
     try {
       const { supabaseAdmin } = await import("@/lib/supabase-admin");
 
+      const { data: existing } = await supabaseAdmin
+        .from("bookings")
+        .select("id")
+        .eq("date", date)
+        .eq("time", time)
+        .maybeSingle();
+
+      if (existing) {
+        return NextResponse.json(
+          { error: "This time slot has just been taken. Please choose a different time." },
+          { status: 409 }
+        );
+      }
+
+      // ── Save booking ────────────────────────────────────────────────────
       await supabaseAdmin
         .from("bookings")
         .insert([{ email, date, time, created_at: new Date().toISOString() }]);
