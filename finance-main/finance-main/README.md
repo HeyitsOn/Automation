@@ -62,15 +62,7 @@ A protected back-office page for the business owner. Displays:
 
 ## How Each Feature Works
 
-### Booking System
-1. Client visits the site and clicks **Book Consultation**
-2. A calendar shows the current month — highlighted dates have pre-set availability slots
-3. Client clicks a date, selects a time slot (or enters a custom time)
-4. Client enters their email and clicks **Confirm**
-5. The booking is saved to the `bookings` table in Supabase
-6. Two confirmation emails are sent via Resend:
-   - One to the business (snethembasibiya@icloud.com and silekuonika02@gmail.com)
-   - One to the client
+ 
 
 ### Contact Form
 1. Client fills in name, email, and message
