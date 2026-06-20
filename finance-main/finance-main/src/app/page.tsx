@@ -66,7 +66,7 @@ export default function Home() {
   useEffect(() => {
     (async () => {
       const { getCalApi } = await import("@calcom/embed-react");
-      const cal = await getCalApi({ namespace: "secret" });
+      const cal = await getCalApi({ namespace: "30min" });
       cal("ui", { hideEventTypeDetails: false, layout: "month_view" });
     })();
   }, []);
@@ -323,8 +323,8 @@ export default function Home() {
             className="overflow-hidden rounded-[28px] bg-white shadow-[0_24px_60px_rgba(0,0,0,0.25)]"
           >
             <Cal
-              namespace="secret"
-              calLink="onika-sileku-fncwrn/secret"
+              namespace="30min"
+              calLink="sinethemba-sibiya-bjq2sn/30min"
               style={{ width: "100%", height: "100%", overflow: "scroll" }}
               config={{ layout: "month_view" }}
             />
