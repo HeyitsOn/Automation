@@ -35,10 +35,10 @@ export default function LoginPage() {
       <div className="mx-auto max-w-md px-6">
         <div className="rounded-[32px] border border-[#E5E7EB] bg-white p-8 shadow-[0_18px_40px_rgba(17,24,39,0.05)]">
           <div className="space-y-6">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#B89B5E]">Log In</p>
-            <h1 className="text-3xl font-semibold text-[#111827]">Access your TaxFlow portal</h1>
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#B89B5E]">Client Portal</p>
+            <h1 className="text-3xl font-semibold text-[#111827]">Welcome back</h1>
             <p className="text-sm leading-7 text-[#6B7280]">
-              Sign in to manage documents, track progress, and communicate with your advisor.
+              Sign in to manage your documents, track progress, and communicate with your advisor.
             </p>
           </div>
 
@@ -75,12 +75,19 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-[#6B7280]">
-            Don't have an account?{" "}
-            <Link href="/auth/signup" className="font-semibold text-[#111827] hover:text-[#B89B5E]">
-              Sign up
-            </Link>
-          </p>
+          <div className="mt-6 space-y-3 text-center text-sm text-[#6B7280]">
+            <p>
+              Don't have an account?{" "}
+              <Link href="/auth/signup" className="font-semibold text-[#111827] hover:text-[#B89B5E]">
+                Sign up
+              </Link>
+            </p>
+            <p>
+              <Link href="/auth/reset-password" className="text-[#B89B5E] hover:underline">
+                Forgot your password?
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
     </main>
