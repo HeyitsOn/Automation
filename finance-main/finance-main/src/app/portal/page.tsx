@@ -4,13 +4,21 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import AuthWrapper from "@/components/AuthWrapper";
 
+const REQUIRED_DOCS = [
+  { id: "id_document", label: "ID Document / Passport", description: "SA ID book, smart card or passport — clear copy both sides" },
+  { id: "irp5", label: "IRP5 / IT3(a)", description: "Tax certificate from your employer for the current tax year" },
+  { id: "bank_statements", label: "Bank Statements", description: "Last 3 months from all bank accounts" },
+  { id: "payslips", label: "Payslips", description: "Last 3 months of payslips" },
+  { id: "medical_aid", label: "Medical Aid Certificate", description: "Annual tax certificate from your medical aid provider" },
+  { id: "ra_certificate", label: "Retirement Annuity (RA)", description: "RA or pension fund certificate — if applicable" },
+];
+
 const portalSections = [
   { id: "dashboard", label: "Dashboard" },
-  { id: "upload", label: "Upload Documents" },
-  { id: "files", label: "Files" },
+  { id: "requirements", label: "Required Documents" },
+  { id: "files", label: "My Files" },
   { id: "messages", label: "Messages" },
   { id: "progress", label: "Progress" },
-  { id: "assistant", label: "AI Assistant" },
 ] as const;
 
 type DocRow = {
@@ -33,11 +41,12 @@ export default function PortalPage() {
   const [user, setUser] = useState<any>(null);
   const [files, setFiles] = useState<DocRow[]>([]);
   const [messages, setMessages] = useState<MessageRow[]>([]);
-  const [uploadCategory, setUploadCategory] = useState("tax");
+  const [uploadCategory, setUploadCategory] = useState<string | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [dragOver, setDragOver] = useState(false); // used by onDragOver handlers
   const [newMessage, setNewMessage] = useState("");
   const [messageSending, setMessageSending] = useState(false);
+  const [notified, setNotified] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -66,21 +75,31 @@ export default function PortalPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (section === "dashboard" || section === "files" || section === "progress") {
-      fetchFiles();
-    }
-    if (section === "messages") {
-      fetchMessages();
-    }
+    fetchFiles();
+    if (section === "messages") fetchMessages();
   }, [user, section, fetchFiles, fetchMessages]);
 
-  const uploadFile = async (file: File) => {
+  const uploadedCategories = new Set(files.map(f => f.category));
+  const completedCount = REQUIRED_DOCS.filter(d => uploadedCategories.has(d.id)).length;
+  const allComplete = completedCount === REQUIRED_DOCS.length;
+
+  const notifyComplete = async (userEmail: string) => {
+    if (notified) return;
+    await fetch("/api/notify-documents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientEmail: userEmail }),
+    });
+    setNotified(true);
+  };
+
+  const uploadFile = async (file: File, category: string) => {
     if (!user) return;
     setUploadLoading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("category", uploadCategory);
+      formData.append("category", category);
       formData.append("userId", user.id);
       const response = await fetch("/api/upload", { method: "POST", body: formData });
       if (!response.ok) {
@@ -88,25 +107,36 @@ export default function PortalPage() {
         throw new Error(data.error || "Upload failed");
       }
       await fetchFiles();
-      setSection("files");
+
+      // Check if all required docs are now uploaded
+      const updatedCategories = new Set([...Array.from(uploadedCategories), category]);
+      const nowComplete = REQUIRED_DOCS.every(d => updatedCategories.has(d.id));
+      if (nowComplete) await notifyComplete(user.email);
+
     } catch (err) {
       alert(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploadLoading(false);
+      setUploadCategory(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadFile(file);
+    if (file && uploadCategory) uploadFile(file, uploadCategory);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent, category: string) => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files[0];
-    if (file) uploadFile(file);
+    if (file) uploadFile(file, category);
+  };
+
+  const triggerUpload = (docId: string) => {
+    setUploadCategory(docId);
+    setTimeout(() => fileInputRef.current?.click(), 50);
   };
 
   const handleSendMessage = async (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -130,27 +160,9 @@ export default function PortalPage() {
     }
   };
 
-  const total = files.length;
-  const inReview = files.filter(f => f.status === "in_review").length;
-  const completed = files.filter(f => f.status === "completed").length;
-
-  const progressSteps = [
-    { label: "Uploaded", value: total > 0 ? 100 : 0 },
-    { label: "In Review", value: total > 0 ? Math.round((inReview / total) * 100) : 0 },
-    { label: "Completed", value: total > 0 ? Math.round((completed / total) * 100) : 0 },
-  ];
-
   const formatDate = (iso: string) =>
     new Date(iso).toLocaleDateString("en-ZA", { month: "short", day: "numeric" });
 
-  const timeAgo = (iso: string) => {
-    const diff = Date.now() - new Date(iso).getTime();
-    const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `${mins}m ago`;
-    const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h ago`;
-    return `${Math.floor(hrs / 24)}d ago`;
-  };
 
   return (
     <AuthWrapper>
@@ -163,33 +175,33 @@ export default function PortalPage() {
       />
       <main className="min-h-screen bg-[#F7F8FA] py-6 sm:py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
+
+          {/* Header */}
           <div className="mb-6 rounded-[28px] border border-[#E5E7EB] bg-white p-5 shadow-[0_18px_50px_rgba(17,24,39,0.05)] sm:mb-8 sm:rounded-[32px] sm:p-8">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm font-semibold uppercase tracking-[0.24em] text-[#B89B5E]">Client Portal</p>
-                <h1 className="mt-3 text-xl font-semibold text-[#111827] sm:text-3xl">Manage documents, progress, and communication in one place.</h1>
+                <h1 className="mt-3 text-xl font-semibold text-[#111827] sm:text-3xl">Manage your documents securely.</h1>
                 <p className="mt-3 max-w-2xl text-sm leading-7 text-[#6B7280]">
-                  Access your secure finance workspace, track review status, and get direct guidance from your advisor.
+                  Upload your required documents, track your submission progress, and communicate with your advisor — all in one place.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={() => setSection("assistant")}
-                  className="rounded-full bg-[#B89B5E] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#a3864d]"
-                >
-                  Ask Assistant
-                </button>
+              {/* Progress pill */}
+              <div className="flex flex-col items-start gap-2 md:items-end">
+                <div className={`rounded-full px-4 py-2 text-sm font-semibold ${allComplete ? "bg-green-100 text-green-700" : "bg-[#FDF9F2] text-[#B89B5E]"}`}>
+                  {allComplete ? "✓ All documents submitted" : `${completedCount} / ${REQUIRED_DOCS.length} documents submitted`}
+                </div>
                 <button
                   onClick={() => setSection("messages")}
-                  className="rounded-full border border-[#E5E7EB] bg-white px-5 py-3 text-sm font-semibold text-[#111827] transition hover:bg-[#F3F4F6]"
+                  className="rounded-full border border-[#E5E7EB] bg-white px-5 py-2 text-sm font-semibold text-[#111827] transition hover:bg-[#F3F4F6]"
                 >
-                  Send Message
+                  Message Advisor
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Mobile tab bar */}
+          {/* Mobile tabs */}
           <div className="mb-4 overflow-x-auto lg:hidden">
             <div className="flex min-w-max gap-2 rounded-2xl border border-[#E5E7EB] bg-white p-2">
               {portalSections.map((item) => (
@@ -198,9 +210,7 @@ export default function PortalPage() {
                   type="button"
                   onClick={() => setSection(item.id)}
                   className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition ${
-                    section === item.id
-                      ? "bg-[#B89B5E] text-white shadow-sm"
-                      : "text-[#6B7280] hover:bg-[#F3F4F6]"
+                    section === item.id ? "bg-[#B89B5E] text-white shadow-sm" : "text-[#6B7280] hover:bg-[#F3F4F6]"
                   }`}
                 >
                   {item.label}
@@ -211,9 +221,9 @@ export default function PortalPage() {
 
           <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
             {/* Desktop sidebar */}
-            <aside className="hidden space-y-4 rounded-[28px] border border-[#E5E7EB] bg-white p-5 lg:block">
-              <div className="space-y-4 rounded-3xl bg-[#F7F8FA] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6B7280]">Workspace</p>
+            <aside className="hidden space-y-4 rounded-[28px] border border-[#E5E7EB] bg-white p-5 lg:block" style={{ alignSelf: "start" }}>
+              <div className="space-y-1 rounded-3xl bg-[#F7F8FA] p-4">
+                <p className="mb-3 text-xs uppercase tracking-[0.2em] text-[#6B7280]">Workspace</p>
                 {portalSections.map((item) => (
                   <button
                     key={item.id}
@@ -226,127 +236,156 @@ export default function PortalPage() {
                     }`}
                   >
                     <span>{item.label}</span>
-                    <span className="text-xs text-[#B89B5E]">›</span>
+                    {item.id === "requirements" && (
+                      <span className="ml-2 rounded-full bg-[#B89B5E] px-2 py-0.5 text-[10px] font-bold text-white">
+                        {completedCount}/{REQUIRED_DOCS.length}
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
             </aside>
 
             <section className="space-y-6">
+
+              {/* ── Dashboard ── */}
               {section === "dashboard" && (
                 <>
                   <div className="grid gap-6 xl:grid-cols-3">
                     {[
-                      { label: "Documents Received", value: String(total) },
-                      { label: "In Review", value: String(inReview) },
-                      { label: "Completed", value: String(completed) },
+                      { label: "Documents Submitted", value: String(files.length) },
+                      { label: "Required Remaining", value: String(REQUIRED_DOCS.length - completedCount) },
+                      { label: "Completed", value: String(files.filter(f => f.status === "completed").length) },
                     ].map((item) => (
                       <div key={item.label} className="rounded-3xl border border-[#E5E7EB] bg-white p-6 shadow-[0_20px_40px_rgba(17,24,39,0.04)]">
                         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6B7280]">{item.label}</p>
                         <p className="mt-4 text-3xl font-semibold text-[#111827]">{item.value}</p>
-                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">Your advisor is processing the next items in the workflow.</p>
                       </div>
                     ))}
                   </div>
+
+                  {/* Quick checklist preview */}
                   <div className="rounded-[28px] border border-[#E5E7EB] bg-white p-6">
                     <div className="mb-5 flex items-center justify-between">
-                      <div>
-                        <h2 className="text-lg font-semibold text-[#111827]">Recent Activity</h2>
-                        <p className="mt-2 text-sm text-[#6B7280]">Latest updates from your document workflow.</p>
-                      </div>
-                      <span className="rounded-full bg-[#F7F8FA] px-3 py-1 text-xs font-semibold text-[#6B7280]">Live</span>
+                      <h2 className="text-lg font-semibold text-[#111827]">Required Documents</h2>
+                      <button onClick={() => setSection("requirements")} className="text-sm font-semibold text-[#B89B5E] hover:underline">View all →</button>
                     </div>
-                    <div className="space-y-4">
-                      {files.length > 0 ? (
-                        files.slice(0, 5).map((file) => (
-                          <div key={file.id} className="rounded-3xl border border-[#E5E7EB] bg-[#F7F8FA] p-4">
-                            <div className="flex items-center justify-between gap-4">
-                              <p className="font-semibold text-[#111827]">Document received</p>
-                              <span className="text-sm text-[#6B7280]">{timeAgo(file.created_at)}</span>
+                    <div className="space-y-3">
+                      {REQUIRED_DOCS.map((doc) => {
+                        const uploaded = uploadedCategories.has(doc.id);
+                        return (
+                          <div key={doc.id} className={`flex items-center justify-between rounded-2xl border p-4 ${uploaded ? "border-green-200 bg-green-50" : "border-[#E5E7EB] bg-[#F7F8FA]"}`}>
+                            <div className="flex items-center gap-3">
+                              <div className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${uploaded ? "bg-green-500 text-white" : "bg-[#E5E7EB] text-[#6B7280]"}`}>
+                                {uploaded ? "✓" : "·"}
+                              </div>
+                              <span className="text-sm font-medium text-[#111827]">{doc.label}</span>
                             </div>
-                            <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                              {file.file_name} — {file.category} ({file.status})
-                            </p>
+                            {!uploaded && (
+                              <button
+                                onClick={() => { setSection("requirements"); }}
+                                className="rounded-full bg-[#B89B5E] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#a3864d]"
+                              >
+                                Upload
+                              </button>
+                            )}
                           </div>
-                        ))
-                      ) : (
-                        <p className="py-4 text-center text-sm text-[#6B7280]">No activity yet. Upload documents to get started.</p>
-                      )}
+                        );
+                      })}
                     </div>
+                    {allComplete && (
+                      <div className="mt-5 rounded-2xl bg-green-50 border border-green-200 p-4 text-center">
+                        <p className="text-sm font-semibold text-green-700">All documents submitted — your advisor has been notified.</p>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
 
-              {section === "upload" && (
-                <div className="space-y-6">
+              {/* ── Required Documents ── */}
+              {section === "requirements" && (
+                <div className="space-y-4">
                   <div className="rounded-[28px] border border-[#E5E7EB] bg-white p-6">
-                    <h2 className="text-lg font-semibold text-[#111827]">Upload Documents</h2>
+                    <h2 className="text-lg font-semibold text-[#111827]">Required Documents</h2>
                     <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-                      Drag and drop files or select documents from your device. We will classify them as tax, income, or expense records.
+                      Upload each document below. Your advisor will be notified automatically once all are submitted.
                     </p>
-                    <div className="mt-5">
-                      <label className="block text-sm font-medium text-[#111827]">
-                        Category
-                        <select
-                          value={uploadCategory}
-                          onChange={(e) => setUploadCategory(e.target.value)}
-                          className="mt-2 w-full rounded-2xl border border-[#E5E7EB] bg-[#F7F8FA] px-4 py-3 text-sm text-[#111827] outline-none transition focus:border-[#B89B5E]"
-                        >
-                          <option value="tax">Tax</option>
-                          <option value="income">Income</option>
-                          <option value="expense">Expenses</option>
-                        </select>
-                      </label>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#F3F4F6]">
+                      <div
+                        className="h-full rounded-full bg-[#B89B5E] transition-all duration-500"
+                        style={{ width: `${Math.round((completedCount / REQUIRED_DOCS.length) * 100)}%` }}
+                      />
                     </div>
-                    <div
-                      onDrop={handleDrop}
-                      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                      onDragLeave={() => setDragOver(false)}
-                      className={`mt-6 rounded-3xl border border-dashed p-8 text-center transition ${
-                        dragOver ? "border-[#B89B5E] bg-[#FDF9F2]" : "border-[#E5E7EB] bg-[#F7F8FA]"
-                      }`}
-                    >
-                      {uploadLoading ? (
-                        <div className="flex flex-col items-center gap-3">
-                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#B89B5E] border-t-transparent" />
-                          <p className="text-sm text-[#6B7280]">Uploading...</p>
+                    <p className="mt-1 text-xs text-[#6B7280]">{completedCount} of {REQUIRED_DOCS.length} submitted</p>
+                  </div>
+
+                  {REQUIRED_DOCS.map((doc) => {
+                    const uploaded = uploadedCategories.has(doc.id);
+                    const docFiles = files.filter(f => f.category === doc.id);
+                    return (
+                      <div
+                        key={doc.id}
+                        className={`rounded-[24px] border p-5 ${uploaded ? "border-green-200 bg-green-50" : "border-[#E5E7EB] bg-white"}`}
+                        onDrop={(e) => { if (!uploaded) handleDrop(e, doc.id); }}
+                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                        onDragLeave={() => setDragOver(false)}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3">
+                            <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${uploaded ? "bg-green-500 text-white" : "bg-[#F3F4F6] text-[#6B7280]"}`}>
+                              {uploaded ? "✓" : "·"}
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold text-[#111827]">{doc.label}</p>
+                              <p className="mt-1 text-xs leading-5 text-[#6B7280]">{doc.description}</p>
+                              {docFiles.length > 0 && (
+                                <div className="mt-2 space-y-1">
+                                  {docFiles.map(f => (
+                                    <p key={f.id} className="text-xs text-green-600">📎 {f.file_name} — uploaded {formatDate(f.created_at)}</p>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="shrink-0">
+                            {uploaded ? (
+                              <button
+                                onClick={() => triggerUpload(doc.id)}
+                                className="rounded-full border border-green-300 px-3 py-1.5 text-xs font-semibold text-green-700 transition hover:bg-green-100"
+                              >
+                                Replace
+                              </button>
+                            ) : (
+                              <button
+                                disabled={uploadLoading && uploadCategory === doc.id}
+                                onClick={() => triggerUpload(doc.id)}
+                                className="rounded-full bg-[#B89B5E] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#a3864d] disabled:opacity-50"
+                              >
+                                {uploadLoading && uploadCategory === doc.id ? "Uploading..." : "Upload"}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      ) : (
-                        <>
-                          <p className="text-sm font-semibold text-[#111827]">Drop files here to upload</p>
-                          <p className="mt-2 text-sm text-[#6B7280]">Accepted formats: PDF, XLSX, JPG, PNG, ZIP</p>
-                          <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="mt-5 rounded-full bg-[#B89B5E] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#a3864d]"
-                          >
-                            Browse documents
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-3">
-                    {[
-                      { label: "Tax", detail: "Returns, forms, filings" },
-                      { label: "Income", detail: "Statements, payroll, invoices" },
-                      { label: "Expenses", detail: "Receipts, bills, statements" },
-                    ].map((item) => (
-                      <div key={item.label} className="rounded-3xl border border-[#E5E7EB] bg-white p-5">
-                        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#6B7280]">{item.label}</p>
-                        <p className="mt-3 text-sm leading-6 text-[#6B7280]">{item.detail}</p>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
+
+                  {allComplete && (
+                    <div className="rounded-[24px] bg-green-50 border border-green-200 p-6 text-center">
+                      <p className="text-base font-semibold text-green-700">All documents submitted!</p>
+                      <p className="mt-1 text-sm text-green-600">Your advisor has been notified and will begin reviewing your files shortly.</p>
+                    </div>
+                  )}
                 </div>
               )}
 
+              {/* ── My Files ── */}
               {section === "files" && (
                 <div className="rounded-[28px] border border-[#E5E7EB] bg-white p-6">
                   <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold text-[#111827]">Files</h2>
-                      <p className="mt-2 text-sm text-[#6B7280]">Review your uploaded financial documents and track their status.</p>
+                      <h2 className="text-lg font-semibold text-[#111827]">My Files</h2>
+                      <p className="mt-2 text-sm text-[#6B7280]">All your uploaded documents and their review status.</p>
                     </div>
                     <span className="rounded-full bg-[#F7F8FA] px-3 py-1 text-xs font-semibold text-[#6B7280]">{files.length} items</span>
                   </div>
@@ -358,20 +397,31 @@ export default function PortalPage() {
                         <thead className="bg-[#F7F8FA] text-[#6B7280]">
                           <tr>
                             <th className="px-4 py-4">File name</th>
-                            <th className="px-4 py-4">Category</th>
+                            <th className="px-4 py-4">Document type</th>
                             <th className="px-4 py-4">Status</th>
-                            <th className="px-4 py-4">Date uploaded</th>
+                            <th className="px-4 py-4">Uploaded</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {files.map((file) => (
-                            <tr key={file.id} className="border-t border-[#E5E7EB]">
-                              <td className="px-4 py-4 text-[#111827]">{file.file_name}</td>
-                              <td className="px-4 py-4 text-[#6B7280]">{file.category}</td>
-                              <td className="px-4 py-4 text-[#111827]">{file.status}</td>
-                              <td className="px-4 py-4 text-[#6B7280]">{formatDate(file.created_at)}</td>
-                            </tr>
-                          ))}
+                          {files.map((file) => {
+                            const req = REQUIRED_DOCS.find(d => d.id === file.category);
+                            return (
+                              <tr key={file.id} className="border-t border-[#E5E7EB]">
+                                <td className="px-4 py-4 text-[#111827]">{file.file_name}</td>
+                                <td className="px-4 py-4 text-[#6B7280]">{req?.label || file.category}</td>
+                                <td className="px-4 py-4">
+                                  <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                                    file.status === "completed" ? "bg-green-100 text-green-700" :
+                                    file.status === "in_review" ? "bg-blue-100 text-blue-700" :
+                                    "bg-[#F7F8FA] text-[#6B7280]"
+                                  }`}>
+                                    {file.status === "in_review" ? "In Review" : file.status === "completed" ? "Completed" : "Received"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-4 text-[#6B7280]">{formatDate(file.created_at)}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -379,6 +429,7 @@ export default function PortalPage() {
                 </div>
               )}
 
+              {/* ── Messages ── */}
               {section === "messages" && (
                 <div className="rounded-[28px] border border-[#E5E7EB] bg-white p-6">
                   <h2 className="text-lg font-semibold text-[#111827]">Messages</h2>
@@ -425,72 +476,57 @@ export default function PortalPage() {
                 </div>
               )}
 
+              {/* ── Progress ── */}
               {section === "progress" && (
                 <div className="rounded-[28px] border border-[#E5E7EB] bg-white p-6">
-                  <h2 className="text-lg font-semibold text-[#111827]">Workflow Progress</h2>
-                  <p className="mt-2 text-sm text-[#6B7280]">Your documents move through a clear, simple workflow.</p>
-                  <div className="mt-6 space-y-5">
-                    {progressSteps.map((step) => (
-                      <div key={step.label}>
-                        <div className="flex items-center justify-between text-sm font-medium text-[#111827]">
-                          <span>{step.label}</span>
-                          <span className="text-[#6B7280]">{step.value}%</span>
-                        </div>
-                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-[#F3F4F6]">
-                          <div
-                            className="h-full rounded-full bg-[#B89B5E] transition-all duration-500"
-                            style={{ width: `${step.value}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  {total === 0 && (
-                    <p className="mt-6 text-sm text-[#6B7280]">Upload documents to see your workflow progress.</p>
-                  )}
-                </div>
-              )}
-
-              {section === "assistant" && (
-                <div className="rounded-[28px] border border-[#E5E7EB] bg-white p-6">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <h2 className="text-lg font-semibold text-[#111827]">AI Assistant</h2>
-                      <p className="mt-2 text-sm text-[#6B7280]">A financial workflow guide built to support your portal experience.</p>
-                    </div>
-                    <span className="rounded-full bg-[#F7F8FA] px-3 py-1 text-xs font-semibold text-[#6B7280]">Structured responses</span>
-                  </div>
+                  <h2 className="text-lg font-semibold text-[#111827]">Submission Progress</h2>
+                  <p className="mt-2 text-sm text-[#6B7280]">Track which documents have been submitted and reviewed.</p>
                   <div className="mt-6 space-y-4">
-                    {[
-                      {
-                        q: "What do I upload?",
-                        a: "Share recent tax forms, pay statements, invoices, receipts, and any financial records relevant to your current filing period.",
-                      },
-                      {
-                        q: "How does review work?",
-                        a: "Once uploaded, your advisor reviews each document and updates the status from Received → In Review → Completed. Check the Progress tab for real-time status.",
-                      },
-                      {
-                        q: "Help me with documents",
-                        a: "I can help identify missing categories, confirm acceptable file types (PDF, XLSX, JPG, PNG, ZIP), and explain what your advisor needs.",
-                      },
-                    ].map((item) => (
-                      <div key={item.q} className="rounded-3xl bg-[#F7F8FA] p-5">
-                        <p className="text-sm font-semibold text-[#111827]">{item.q}</p>
-                        <p className="mt-2 text-sm leading-6 text-[#6B7280]">{item.a}</p>
-                      </div>
-                    ))}
+                    {REQUIRED_DOCS.map((doc) => {
+                      const uploaded = uploadedCategories.has(doc.id);
+                      const docFile = files.find(f => f.category === doc.id);
+                      return (
+                        <div key={doc.id} className="flex items-center gap-4">
+                          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                            docFile?.status === "completed" ? "bg-green-500 text-white" :
+                            uploaded ? "bg-[#B89B5E] text-white" :
+                            "bg-[#F3F4F6] text-[#9CA3AF]"
+                          }`}>
+                            {docFile?.status === "completed" ? "✓" : uploaded ? "↑" : "·"}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <p className="text-sm font-medium text-[#111827]">{doc.label}</p>
+                              <span className={`text-xs font-semibold ${
+                                docFile?.status === "completed" ? "text-green-600" :
+                                uploaded ? "text-[#B89B5E]" :
+                                "text-[#9CA3AF]"
+                              }`}>
+                                {docFile?.status === "completed" ? "Completed" : uploaded ? "Submitted" : "Pending"}
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#F3F4F6]">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  docFile?.status === "completed" ? "bg-green-500" :
+                                  uploaded ? "bg-[#B89B5E]" : "bg-transparent"
+                                }`}
+                                style={{ width: docFile?.status === "completed" ? "100%" : uploaded ? "60%" : "0%" }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <p className="mt-6 text-sm text-[#6B7280]">
-                    For direct help,{" "}
+                  {!allComplete && (
                     <button
-                      onClick={() => setSection("messages")}
-                      className="font-semibold text-[#B89B5E] hover:underline"
+                      onClick={() => setSection("requirements")}
+                      className="mt-6 rounded-full bg-[#B89B5E] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#a3864d]"
                     >
-                      send a message
-                    </button>{" "}
-                    to reach your advisor.
-                  </p>
+                      Upload missing documents →
+                    </button>
+                  )}
                 </div>
               )}
             </section>

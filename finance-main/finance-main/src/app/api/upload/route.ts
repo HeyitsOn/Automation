@@ -46,18 +46,26 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: dbError.message }, { status: 500 });
     }
 
-    await resend.emails.send({
-      from: "TaxFlow <onboarding@resend.dev>",
-      to: "sisnethembasibiya@icloud.com",
-      subject: `New document uploaded: ${file.name}`,
-      html: `
-        <h2>New Document Uploaded</h2>
-        <p><strong>File:</strong> ${file.name}</p>
-        <p><strong>Category:</strong> ${category}</p>
-        <p><strong>User ID:</strong> ${userId}</p>
-        <p><strong>Uploaded at:</strong> ${new Date().toLocaleString()}</p>
-      `,
-    });
+    const uploadHtml = `
+      <h2>New Document Uploaded</h2>
+      <p><strong>File:</strong> ${file.name}</p>
+      <p><strong>Document type:</strong> ${category}</p>
+      <p><strong>Uploaded at:</strong> ${new Date().toLocaleString("en-ZA")}</p>
+    `;
+    await Promise.all([
+      resend.emails.send({
+        from: "The Accounting Room <onboarding@resend.dev>",
+        to: "snethembasibiya@icloud.com",
+        subject: `New document uploaded: ${file.name}`,
+        html: uploadHtml,
+      }),
+      resend.emails.send({
+        from: "The Accounting Room <onboarding@resend.dev>",
+        to: "info@theaccountingroom.org",
+        subject: `New document uploaded: ${file.name}`,
+        html: uploadHtml,
+      }),
+    ]);
 
     return NextResponse.json(
       { success: true, message: "File uploaded successfully" },
