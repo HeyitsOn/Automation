@@ -2,8 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 
 const ADMIN_EMAILS = [
   "snethembasibiya@icloud.com",
-  "silekuonika02@gmail.com",
-  "sisnethembasibiya@icloud.com",
+  "info@theaccountingroom.org",
+  "sinethemba@theaccountingroom.org",
 ];
 
 export async function verifyAdmin(authHeader: string | null): Promise<boolean> {

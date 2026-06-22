@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 
 const ADMIN_EMAILS = [
   "snethembasibiya@icloud.com",
-  "silekuonika02@gmail.com",
-  "sisnethembasibiya@icloud.com",
+  "info@theaccountingroom.org",
+  "sinethemba@theaccountingroom.org",
 ];
 
 const sections = [
@@ -18,7 +18,7 @@ const sections = [
   { id: "availability", label: "Availability" },
 ] as const;
 
-type Doc = { id: string; user_id: string; file_name: string; file_path: string; category: string; status: string; created_at: string };
+type Doc = { id: string; user_id: string; file_name: string; file_path: string; category: string; category_label: string; client_email: string; client_name: string; status: string; created_at: string };
 type Booking = { id: string; email: string; date: string; time: string; created_at: string };
 type Contact = { id: string; name: string; email: string; message: string; created_at: string };
 type Message = { id: string; user_id: string; sender: string; content: string; created_at: string };
@@ -252,8 +252,9 @@ export default function AdminPage() {
                     <table className="min-w-full text-left text-sm">
                       <thead className="bg-[#F7F8FA] text-[#6B7280]">
                         <tr>
+                          <th className="px-4 py-4">Client</th>
+                          <th className="px-4 py-4">Document type</th>
                           <th className="px-4 py-4">File</th>
-                          <th className="px-4 py-4">Category</th>
                           <th className="px-4 py-4">Date</th>
                           <th className="px-4 py-4">Status</th>
                           <th className="px-4 py-4">Download</th>
@@ -262,8 +263,12 @@ export default function AdminPage() {
                       <tbody>
                         {documents.map((doc) => (
                           <tr key={doc.id} className="border-t border-[#E5E7EB]">
+                            <td className="px-4 py-4">
+                              <p className="font-medium text-[#111827]">{doc.client_name || doc.client_email}</p>
+                              {doc.client_name && <p className="text-xs text-[#6B7280]">{doc.client_email}</p>}
+                            </td>
+                            <td className="px-4 py-4 text-[#6B7280]">{doc.category_label || doc.category}</td>
                             <td className="px-4 py-4 text-[#111827]">{doc.file_name}</td>
-                            <td className="px-4 py-4 capitalize text-[#6B7280]">{doc.category}</td>
                             <td className="px-4 py-4 text-[#6B7280]">{formatDate(doc.created_at)}</td>
                             <td className="px-4 py-4">
                               <select
@@ -272,6 +277,7 @@ export default function AdminPage() {
                                 className="rounded-xl border border-[#E5E7EB] bg-[#F7F8FA] px-3 py-1.5 text-xs font-medium text-[#111827] outline-none transition focus:border-[#B89B5E]"
                               >
                                 <option value="uploaded">Uploaded</option>
+                                <option value="received">Received</option>
                                 <option value="in_review">In Review</option>
                                 <option value="completed">Completed</option>
                               </select>
